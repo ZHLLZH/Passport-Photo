@@ -43,12 +43,9 @@
     .overlay {
       position: absolute; inset: 0; pointer-events: none;
     }
-    /* 参考线：顶边留白 3-5mm（取中间值约 4mm），下巴到下边缘 >=7mm（取 7mm线） */
-    /* 用比例近似：照片高48mm，4mm≈8.33%，7mm≈14.58% */
     .line { position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed rgba(0,0,0,.35); }
     .topgap { top: 8.33%; }
     .bottomchin { bottom: 14.58%; }
-    /* 中线 & 脸部安全框（大致提示） */
     .vline { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; border-left: 2px dashed rgba(0,0,0,.25); }
     .safe {
       position: absolute;
@@ -86,7 +83,7 @@
         </div>
       </div>
       <div class="hint" style="margin-top:8px;">
-        用法：拍照/选照片 → 用一根手指拖动位置、两根手指缩放 → 让头顶接近“顶边留白线”、下巴不要低于“下巴线”，脸尽量在中间 → 导出。
+        用法：拍照/选照片 → 点击"白底处理"自动换白底 → 用一根手指拖动位置、两根手指缩放 → 让头顶接近"顶边留白线"、下巴不要低于"下巴线"，脸尽量在中间 → 导出。
       </div>
     </div>
 
@@ -96,6 +93,7 @@
           <input id="file" type="file" accept="image/*" capture="environment" />
           <button id="fit" disabled>自动适配</button>
           <button id="reset" disabled>重置</button>
+          <button id="bgRemove" disabled>白底处理</button>
         </div>
 
         <div style="height:12px;"></div>
@@ -123,7 +121,7 @@
         </div>
 
         <div class="hint" style="margin-top:8px;">
-          提示：照片要求里“面部或背景无阴影、白底、清晰”，这些是拍摄质量问题，裁剪无法补救。最好靠窗自然光、背景纯白墙、相机与人脸平齐。
+          提示："白底处理"可自动去除背景换成纯白，首次使用需下载 AI 模型（约 40MB），之后会缓存。拍摄时最好靠窗自然光、相机与人脸平齐效果最佳。
         </div>
       </div>
 
@@ -147,7 +145,6 @@
 
 <script>
 (() => {
-  // 33mm x 48mm
   const MM_W = 33, MM_H = 48;
   const ASPECT = MM_W / MM_H;
 
@@ -160,9 +157,10 @@
   const zoomEl = document.getElementById('zoom');
   const rotEl  = document.getElementById('rot');
 
-  const btnFit   = document.getElementById('fit');
-  const btnReset = document.getElementById('reset');
-  const btnExport= document.getElementById('export');
+  const btnFit      = document.getElementById('fit');
+  const btnReset    = document.getElementById('reset');
+  const btnExport   = document.getElementById('export');
+  const btnBgRemove = document.getElementById('bgRemove');
 
   const outImg = document.getElementById('outImg');
   const targetSize = document.getElementById('targetSize');
@@ -173,15 +171,15 @@
 
   targetSize.textContent = `${MM_W}mm × ${MM_H}mm`;
 
-  // 状态
   let img = null;
   let imgW=0, imgH=0;
-  let panX=0, panY=0;    // 以“图像像素”为单位的平移（在画布中心坐标系里）
+  let panX=0, panY=0;
   let scale=1;
-  let rot=0;             // 弧度
+  let rot=0;
   let isDragging=false;
   let last = {x:0,y:0};
   let lastDist = null;
+  let originalFile = null;
 
   function enableUI(on){
     btnFit.disabled = !on;
@@ -190,6 +188,7 @@
     zoomEl.disabled = !on;
     rotEl.disabled = !on;
     btnShare.disabled = !on;
+    btnBgRemove.disabled = !on;
   }
 
   function setCanvasSizeToBox(){
@@ -214,32 +213,24 @@
     ctx.fillStyle = '#fff';
     ctx.fillRect(0,0,cv.width,cv.height);
 
-    // 画布中心
     const cx = cv.width/2, cy=cv.height/2;
     ctx.translate(cx, cy);
     ctx.rotate(rot);
 
-    // 计算缩放：把图片按 scale 缩放后绘制在中心，再用 pan 偏移
-    // scale=1 表示“适配裁剪框”的基础缩放（由 fit() 给出），再乘用户缩放
     const base = scale;
-
     const drawW = imgW * base;
     const drawH = imgH * base;
 
     ctx.translate(panX*base, panY*base);
     ctx.drawImage(img, -drawW/2, -drawH/2, drawW, drawH);
-
     ctx.restore();
   }
 
-  // 自动适配：让图片刚好覆盖裁剪框（cover）
   function fit(){
     if(!img) return;
-    // 在不旋转下，求 cover 缩放
     const sx = cv.width / imgW;
     const sy = cv.height/ imgH;
-    const cover = Math.max(sx, sy);
-    scale = cover;
+    scale = Math.max(sx, sy);
     panX = 0; panY = 0;
     rot = 0;
     zoomEl.value = 1;
@@ -247,17 +238,13 @@
     draw();
   }
 
-  function reset(){
-    fit();
-  }
+  function reset(){ fit(); }
 
-  // 把当前裁剪框内容导出为指定像素尺寸（按mm与dpi换算）
   function exportImage(){
     const dpi = Number(dpiEl.value || 300);
     const outW = Math.round((MM_W/25.4) * dpi);
     const outH = Math.round((MM_H/25.4) * dpi);
 
-    // 用离屏canvas重新渲染，避免受屏幕dpr影响
     const out = document.createElement('canvas');
     out.width = outW;
     out.height= outH;
@@ -266,10 +253,6 @@
     octx.fillStyle = '#fff';
     octx.fillRect(0,0,outW,outH);
 
-    // 把当前“裁剪框画布”内容映射到输出尺寸
-    // 关键：重用同一套变换，但把 cv 的坐标系等比映射到 out
-    // 先把当前cv内容渲染到中间：我们直接调用 draw 到一个临时画布更简单
-    // 这里：用现有状态在 out 上重画一遍
     octx.save();
     const cx = outW/2, cy = outH/2;
     octx.translate(cx, cy);
@@ -277,9 +260,7 @@
 
     const sx = outW / cv.width;
     const sy = outH / cv.height;
-
-    // 让“图像到cv”的缩放与平移按输出比例缩放
-    const base = scale * Math.min(sx, sy); // sx==sy（同比例），这里稳妥写法
+    const base = scale * Math.min(sx, sy);
     const drawW = imgW * base;
     const drawH = imgH * base;
 
@@ -293,19 +274,16 @@
     out.toBlob((blob) => {
       if(!blob) return;
       const url = URL.createObjectURL(blob);
-
       outImg.src = url;
       pxSize.textContent = `${outW} × ${outH} px`;
       fileSize.textContent = `${(blob.size/1024).toFixed(1)} KB`;
 
-      // 下载链接
       const ext = (mime === 'image/png') ? 'png' : 'jpg';
       dl.href = url;
       dl.download = `passport_${MM_W}x${MM_H}_${dpi}dpi.${ext}`;
       dl.style.display = 'inline-block';
       dl.textContent = '下载导出文件';
 
-      // 分享
       btnShare.disabled = false;
       btnShare.onclick = async () => {
         try{
@@ -313,17 +291,15 @@
           if(navigator.canShare && navigator.canShare({ files: [file] })){
             await navigator.share({ files: [file], title: '护照照片', text: '33×48mm' });
           }else{
-            // 不支持就提示用下载
-            alert('此浏览器不支持直接分享，请点击“下载导出文件”。');
+            alert('此浏览器不支持直接分享，请点击"下载导出文件"。');
           }
         }catch(e){
-          alert('分享失败，可改用“下载导出文件”。');
+          alert('分享失败，可改用"下载导出文件"。');
         }
       };
     }, mime, quality);
   }
 
-  // 交互：触摸拖动/双指缩放
   function getPoint(e){
     const r = cv.getBoundingClientRect();
     return { x: (e.clientX - r.left) * (cv.width / r.width),
@@ -344,19 +320,13 @@
     const dx = p.x - last.x;
     const dy = p.y - last.y;
     last = p;
-
-    // dx,dy 是画布像素，换算回“图像像素平移量”
-    // 因为 draw 里 panX*scale 作用在画布坐标，所以 panX变化 = dx/scale
     panX += dx / scale;
     panY += dy / scale;
     draw();
   }
 
-  function onPointerUp(e){
-    isDragging = false;
-  }
+  function onPointerUp(e){ isDragging = false; }
 
-  // 额外：用滚轮缩放（电脑调试方便）
   cv.addEventListener('wheel', (e) => {
     if(!img) return;
     e.preventDefault();
@@ -370,15 +340,10 @@
     if(!img) return;
     const userZoom = Number(zoomEl.value);
     const userRot = Number(rotEl.value);
-    // fit() 设定 scale 为cover基础，此处用 userZoom 乘上去
-    // 为了简单：把 scale 重置为 fitScale * userZoom，需要记录 fitScale
-    // 这里：用当前 scale / 当前userZoom 来反推 fitScale（只要用户不改dpi就稳定）
     const currentUserZoom = (window.__userZoomLast || 1);
     const fitScale = scale / currentUserZoom;
-
     scale = fitScale * userZoom;
     rot = userRot * Math.PI / 180;
-
     window.__userZoomLast = userZoom;
     draw();
   }
@@ -386,10 +351,11 @@
   zoomEl.addEventListener('input', applyZoomRot);
   rotEl.addEventListener('input', applyZoomRot);
 
-  // 加载图片
   fileEl.addEventListener('change', () => {
     const f = fileEl.files && fileEl.files[0];
     if(!f) return;
+    originalFile = f;
+    btnBgRemove.textContent = '白底处理';
 
     const url = URL.createObjectURL(f);
     const im = new Image();
@@ -397,10 +363,8 @@
       img = im;
       imgW = im.naturalWidth;
       imgH = im.naturalHeight;
-
       setCanvasSizeToBox();
       fit();
-
       enableUI(true);
       btnShare.disabled = true;
       outImg.src = '';
@@ -416,11 +380,41 @@
   btnReset.addEventListener('click', reset);
   btnExport.addEventListener('click', exportImage);
 
-  // 指针事件（兼容触摸）
   cv.addEventListener('pointerdown', onPointerDown);
   cv.addEventListener('pointermove', onPointerMove);
   cv.addEventListener('pointerup', onPointerUp);
   cv.addEventListener('pointercancel', onPointerUp);
+
+  // 白底处理：AI 去背景
+  btnBgRemove.addEventListener('click', async () => {
+    if (!originalFile) return;
+    btnBgRemove.disabled = true;
+    btnBgRemove.textContent = '加载模型…';
+    try {
+      const { removeBackground } = await import(
+        'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/+esm'
+      );
+      btnBgRemove.textContent = '处理中…';
+      const blob = await removeBackground(originalFile, {
+        publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/',
+      });
+      const url = URL.createObjectURL(blob);
+      const newImg = new Image();
+      newImg.onload = () => {
+        img = newImg;
+        imgW = newImg.naturalWidth;
+        imgH = newImg.naturalHeight;
+        draw();
+        btnBgRemove.textContent = '✓ 白底已处理';
+        btnBgRemove.disabled = false;
+      };
+      newImg.src = url;
+    } catch(e) {
+      alert('背景去除失败，请重试。');
+      btnBgRemove.textContent = '白底处理';
+      btnBgRemove.disabled = false;
+    }
+  });
 
   // 初始化
   setCanvasSizeToBox();
