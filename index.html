@@ -146,7 +146,6 @@
 <script>
 (() => {
   const MM_W = 33, MM_H = 48;
-  const ASPECT = MM_W / MM_H;
 
   const fileEl = document.getElementById('file');
   const dpiEl  = document.getElementById('dpi');
@@ -176,10 +175,11 @@
   let panX=0, panY=0;
   let scale=1;
   let rot=0;
-  let isDragging=false;
-  let last = {x:0,y:0};
-  let lastDist = null;
   let originalFile = null;
+  let _imgUrl = null, _bgUrl = null, _exportUrl = null;
+  const pointers = new Map();
+  let lastPinchDist = null;
+  let lastSinglePoint = null;
 
   function enableUI(on){
     btnFit.disabled = !on;
@@ -273,13 +273,14 @@
 
     out.toBlob((blob) => {
       if(!blob) return;
-      const url = URL.createObjectURL(blob);
-      outImg.src = url;
+      if(_exportUrl) URL.revokeObjectURL(_exportUrl);
+      _exportUrl = URL.createObjectURL(blob);
+      outImg.src = _exportUrl;
       pxSize.textContent = `${outW} × ${outH} px`;
       fileSize.textContent = `${(blob.size/1024).toFixed(1)} KB`;
 
       const ext = (mime === 'image/png') ? 'png' : 'jpg';
-      dl.href = url;
+      dl.href = _exportUrl;
       dl.download = `passport_${MM_W}x${MM_H}_${dpi}dpi.${ext}`;
       dl.style.display = 'inline-block';
       dl.textContent = '下载导出文件';
@@ -306,26 +307,45 @@
              y: (e.clientY - r.top ) * (cv.height/ r.height) };
   }
 
+  function getPinchDist(){
+    const [a, b] = [...pointers.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
   function onPointerDown(e){
     if(!img) return;
     cv.setPointerCapture?.(e.pointerId);
-    isDragging = true;
-    last = getPoint(e);
+    const p = getPoint(e);
+    pointers.set(e.pointerId, p);
+    if(pointers.size === 1){
+      lastSinglePoint = p;
+    } else if(pointers.size === 2){
+      lastPinchDist = getPinchDist();
+    }
   }
 
   function onPointerMove(e){
-    if(!img) return;
-    if(!isDragging) return;
+    if(!img || !pointers.has(e.pointerId)) return;
     const p = getPoint(e);
-    const dx = p.x - last.x;
-    const dy = p.y - last.y;
-    last = p;
-    panX += dx / scale;
-    panY += dy / scale;
-    draw();
+    pointers.set(e.pointerId, p);
+    if(pointers.size === 1){
+      panX += (p.x - lastSinglePoint.x) / scale;
+      panY += (p.y - lastSinglePoint.y) / scale;
+      lastSinglePoint = p;
+      draw();
+    } else if(pointers.size === 2 && lastPinchDist){
+      const dist = getPinchDist();
+      zoomEl.value = Math.min(3, Math.max(0.5, Number(zoomEl.value) * dist / lastPinchDist));
+      applyZoomRot();
+      lastPinchDist = dist;
+    }
   }
 
-  function onPointerUp(e){ isDragging = false; }
+  function onPointerUp(e){
+    pointers.delete(e.pointerId);
+    lastPinchDist = null;
+    if(pointers.size === 1) lastSinglePoint = [...pointers.values()][0];
+  }
 
   cv.addEventListener('wheel', (e) => {
     if(!img) return;
@@ -357,9 +377,12 @@
     originalFile = f;
     btnBgRemove.textContent = '白底处理';
 
-    const url = URL.createObjectURL(f);
+    if(_imgUrl) URL.revokeObjectURL(_imgUrl);
+    if(_bgUrl)  { URL.revokeObjectURL(_bgUrl); _bgUrl = null; }
+    _imgUrl = URL.createObjectURL(f);
     const im = new Image();
     im.onload = () => {
+      URL.revokeObjectURL(_imgUrl); _imgUrl = null;
       img = im;
       imgW = im.naturalWidth;
       imgH = im.naturalHeight;
@@ -373,7 +396,7 @@
       pxSize.textContent = '-';
     };
     im.onerror = () => alert('图片读取失败，请换一张。');
-    im.src = url;
+    im.src = _imgUrl;
   });
 
   btnFit.addEventListener('click', fit);
@@ -396,11 +419,13 @@
       );
       btnBgRemove.textContent = '处理中…';
       const blob = await removeBackground(originalFile, {
-        publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm',
+        publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/dist/',
       });
-      const url = URL.createObjectURL(blob);
+      if(_bgUrl) URL.revokeObjectURL(_bgUrl);
+      _bgUrl = URL.createObjectURL(blob);
       const newImg = new Image();
       newImg.onload = () => {
+        URL.revokeObjectURL(_bgUrl); _bgUrl = null;
         img = newImg;
         imgW = newImg.naturalWidth;
         imgH = newImg.naturalHeight;
@@ -408,7 +433,7 @@
         btnBgRemove.textContent = '✓ 白底已处理';
         btnBgRemove.disabled = false;
       };
-      newImg.src = url;
+      newImg.src = _bgUrl;
     } catch(e) {
       alert('背景去除失败，请重试。');
       btnBgRemove.textContent = '白底处理';
