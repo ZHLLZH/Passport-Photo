@@ -3,14 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CN Passport Photo</title>
+  <title>Passport Photo Tool</title>
   <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#ffffff">
-    <!-- iOS 支持 -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="CN Passport Photo">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Passport Photo">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="icon-192.png">
 
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, "PingFang SC", "Microsoft YaHei", sans-serif; margin: 0; background: #f6f6f6; }
@@ -28,31 +27,33 @@
     .stage { display: grid; grid-template-columns: 1fr; gap: 12px; }
     @media (min-width: 900px){ .stage { grid-template-columns: 1.3fr .7fr; } }
 
-    /* 裁剪区：固定比例 33:48 */
+    /* Tabs */
+    .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+    .tab {
+      flex: 1; padding: 12px 8px; border-radius: 12px; border: 1px solid #ddd;
+      background: #fff; font-size: 15px; font-weight: 500; cursor: pointer;
+      color: #888; transition: all .15s;
+    }
+    .tab.active { background: #111; color: #fff; border-color: #111; }
+
+    /* 裁剪区 */
     .cropbox {
       position: relative;
       width: 100%;
-      aspect-ratio: 33 / 48;
       background: #fff;
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid #e3e3e3;
       touch-action: none;
     }
+    .cropbox.cn { aspect-ratio: 33 / 48; }
+    .cropbox.nz { aspect-ratio: 3 / 4; }
     .cropbox canvas { width: 100%; height: 100%; display: block; background: #fff; }
-    .overlay {
-      position: absolute; inset: 0; pointer-events: none;
-    }
+    .overlay { position: absolute; inset: 0; pointer-events: none; }
     .line { position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed rgba(0,0,0,.35); }
-    .topgap { top: 8.33%; }
-    .bottomchin { bottom: 14.58%; }
     .vline { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; border-left: 2px dashed rgba(0,0,0,.25); }
     .safe {
       position: absolute;
-      left: 18%;
-      right: 18%;
-      top: 18%;
-      bottom: 18%;
       border: 2px dashed rgba(0,0,0,.18);
       border-radius: 10px;
     }
@@ -60,10 +61,35 @@
     .thumb { width: 100%; border-radius: 14px; border: 1px solid #e3e3e3; background: #fff; }
     .kvs { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; font-size: 13px; color: #444; }
     .kvs div:nth-child(odd){ color: #666; }
+
+    /* File size badge */
+    /* Guide legend */
+    .guide-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 8px 0 0; }
+    .guide-legend li { list-style: none; display: flex; align-items: center; gap: 7px; font-size: 12px; color: #555; }
+    .gl-top    { display:inline-block; width:28px; border-top: 2px dashed rgba(0,0,0,.5); }
+    .gl-bottom { display:inline-block; width:28px; border-top: 2px dashed rgba(0,0,0,.5); }
+    .gl-center { display:inline-block; width:0; height:16px; border-left: 2px dashed rgba(0,0,0,.35); }
+    .gl-safe   { display:inline-block; width:20px; height:14px; border: 2px dashed rgba(0,0,0,.3); border-radius:3px; }
+
+    .size-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 20px;
+      font-size: 12px; font-weight: 600;
+    }
+    .size-badge.ok  { background: #d4f7dc; color: #1a7a33; }
+    .size-badge.bad { background: #fde8e8; color: #b91c1c; }
   </style>
 </head>
 <body>
-  <div class="wrap">
+<div class="wrap">
+
+  <!-- Tab bar -->
+  <div class="tabs">
+    <button class="tab active" data-tab="cn">🇨🇳 中国护照</button>
+    <button class="tab"        data-tab="nz">🇳🇿 NZ Passport</button>
+  </div>
+
+  <!-- ===== CN TAB ===== -->
+  <div id="tab-cn">
     <div class="card">
       <div class="row" style="justify-content: space-between;">
         <div style="font-size:16px;">中国护照/旅行证照片裁剪</div>
@@ -98,17 +124,24 @@
 
         <div style="height:12px;"></div>
 
-        <div class="cropbox" id="cropbox">
+        <div class="cropbox cn" id="cropbox">
           <canvas id="cv"></canvas>
           <div class="overlay">
-            <div class="line topgap" title="建议头顶留白 3–5mm（约在此线附近）"></div>
-            <div class="line bottomchin" title="下巴不要低于此线（下颚以下到下边缘≥7mm）"></div>
+            <div class="line" style="top:8.33%;" title="建议头顶留白 3–5mm（约在此线附近）"></div>
+            <div class="line" style="bottom:14.58%;" title="下巴不要低于此线（下颚以下到下边缘≥7mm）"></div>
             <div class="vline" title="居中参考线"></div>
-            <div class="safe" title="大致安全区域提示"></div>
+            <div class="safe" style="left:18%;right:18%;top:18%;bottom:18%;" title="大致安全区域提示"></div>
           </div>
         </div>
 
-        <div style="height:12px;"></div>
+        <ul class="guide-legend">
+          <li><span class="gl-top"></span> 顶线：头顶对齐此线，保留适当留白</li>
+          <li><span class="gl-bottom"></span> 底线：下巴不要低于此线</li>
+          <li><span class="gl-center"></span> 竖线：以此线为中轴让脸居中</li>
+          <li><span class="gl-safe"></span> 方框：脸部尽量保持在框内</li>
+        </ul>
+
+        <div style="height:8px;"></div>
 
         <div class="row">
           <label class="hint">缩放：
@@ -136,14 +169,115 @@
         </div>
         <div style="height:12px;"></div>
         <div class="row">
-          <a id="dl" download="passport_33x48.jpg" style="display:none;">下载</a>
+          <a id="dl" download="passport_33x48.jpg" style="display:none;"></a>
           <button id="share" disabled>分享到手机</button>
         </div>
       </div>
     </div>
-  </div>
+  </div><!-- /tab-cn -->
+
+  <!-- ===== NZ TAB ===== -->
+  <div id="tab-nz" style="display:none;">
+    <div class="card">
+      <div style="font-size:16px; margin-bottom:8px;">🇳🇿 New Zealand Passport Photo</div>
+      <div class="hint">
+        <strong>Requirements:</strong> Colour JPEG · 3:4 ratio · 900–4500 × 1200–6000 px · 250 KB – 5 MB · taken within last 6 months · plain white/light grey background.<br>
+        <strong>How to use:</strong> Take/select a photo → tap <em>White Background</em> to replace any non-white background with pure white → drag to position face · pinch to zoom · adjust if needed → Export.
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="card">
+        <div class="row">
+          <input id="nz-file" type="file" accept="image/*" capture="environment" />
+          <button id="nz-fit"      disabled>Auto Fit</button>
+          <button id="nz-reset"    disabled>Reset</button>
+          <button id="nz-bgRemove" disabled>White Background</button>
+        </div>
+
+        <div style="height:12px;"></div>
+
+        <div class="cropbox nz" id="nz-cropbox">
+          <canvas id="nz-cv"></canvas>
+          <div class="overlay">
+            <div class="line" style="top:8%;"    title="Top of head guideline"></div>
+            <div class="line" style="bottom:20%;" title="Chin guideline — chin should stay above this line"></div>
+            <div class="vline" title="Centre reference"></div>
+            <div class="safe" style="left:15%;right:15%;top:10%;bottom:10%;" title="Approximate safe zone for face"></div>
+          </div>
+        </div>
+
+        <ul class="guide-legend">
+          <li><span class="gl-top"></span> Top line: align top of head here, leaving a small gap</li>
+          <li><span class="gl-bottom"></span> Bottom line: chin must stay above this line</li>
+          <li><span class="gl-center"></span> Centre line: keep face centred on this axis</li>
+          <li><span class="gl-safe"></span> Box: keep face within this area</li>
+        </ul>
+
+        <div style="height:8px;"></div>
+
+        <div class="row">
+          <label class="hint">Zoom:
+            <input id="nz-zoom" type="range" min="0.5" max="3" step="0.01" value="1" disabled />
+          </label>
+          <label class="hint">Rotate:
+            <input id="nz-rot" type="range" min="-10" max="10" step="0.1" value="0" disabled />
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <label class="hint">Quality: <span id="nz-quality-val">90%</span>
+            <input id="nz-quality" type="range" min="70" max="100" step="1" value="90" />
+          </label>
+          <button id="nz-export" class="primary" disabled>Export NZ Passport</button>
+        </div>
+
+        <div class="hint" style="margin-top:8px;">
+          Tip: <em>White Background</em> uses AI to replace any background with pure white — ideal if your wall has shadows or colour tints. First use downloads a ~40 MB model (cached afterwards). Best results: face the camera at eye level in natural window light.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hint" style="margin-bottom:8px;">Export Preview</div>
+        <img id="nz-outImg" class="thumb" alt="Export preview" />
+        <div style="height:10px;"></div>
+        <div class="kvs">
+          <div>Output size</div><div id="nz-pxSize">-</div>
+          <div>File size</div>
+          <div id="nz-fileSize">-</div>
+          <div>Size valid?</div>
+          <div id="nz-sizeBadge">-</div>
+        </div>
+        <div class="hint" style="margin-top:6px; font-size:12px; color:#888;">
+          Valid range: 250 KB – 5 MB. Adjust Quality slider if needed.
+        </div>
+        <div style="height:12px;"></div>
+        <div class="row">
+          <a id="nz-dl" download="nz_passport_1350x1800.jpg" style="display:none;"></a>
+          <button id="nz-share" disabled>Share to phone</button>
+        </div>
+      </div>
+    </div>
+  </div><!-- /tab-nz -->
+
+</div><!-- /wrap -->
 
 <script>
+// ── Tab switching ──────────────────────────────────────────────
+(() => {
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-cn').style.display = btn.dataset.tab === 'cn' ? '' : 'none';
+      document.getElementById('tab-nz').style.display = btn.dataset.tab === 'nz' ? '' : 'none';
+      // Re-initialise canvas sizes now that the tab is visible
+      window.dispatchEvent(new Event('resize'));
+    });
+  });
+})();
+
+// ── CN TAB ────────────────────────────────────────────────────
 (() => {
   const MM_W = 33, MM_H = 48;
 
@@ -161,287 +295,363 @@
   const btnExport   = document.getElementById('export');
   const btnBgRemove = document.getElementById('bgRemove');
 
-  const outImg = document.getElementById('outImg');
+  const outImg     = document.getElementById('outImg');
   const targetSize = document.getElementById('targetSize');
-  const pxSize = document.getElementById('pxSize');
-  const fileSize = document.getElementById('fileSize');
-  const dl = document.getElementById('dl');
-  const btnShare = document.getElementById('share');
+  const pxSize     = document.getElementById('pxSize');
+  const fileSize   = document.getElementById('fileSize');
+  const dl         = document.getElementById('dl');
+  const btnShare   = document.getElementById('share');
 
   targetSize.textContent = `${MM_W}mm × ${MM_H}mm`;
 
-  let img = null;
-  let imgW=0, imgH=0;
-  let panX=0, panY=0;
-  let scale=1;
-  let rot=0;
+  let img = null, imgW=0, imgH=0, panX=0, panY=0, scale=1, rot=0;
   let originalFile = null;
   let _imgUrl = null, _bgUrl = null, _exportUrl = null;
   const pointers = new Map();
-  let lastPinchDist = null;
-  let lastSinglePoint = null;
+  let lastPinchDist = null, lastSinglePoint = null;
 
   function enableUI(on){
-    btnFit.disabled = !on;
-    btnReset.disabled = !on;
-    btnExport.disabled = !on;
-    zoomEl.disabled = !on;
-    rotEl.disabled = !on;
-    btnShare.disabled = !on;
-    btnBgRemove.disabled = !on;
+    btnFit.disabled = btnReset.disabled = btnExport.disabled =
+      zoomEl.disabled = rotEl.disabled = btnShare.disabled =
+      btnBgRemove.disabled = !on;
   }
 
   function setCanvasSizeToBox(){
     const r = cropbox.getBoundingClientRect();
+    if(!r.width) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     cv.width  = Math.round(r.width * dpr);
     cv.height = Math.round(r.height * dpr);
-    cv.style.width = r.width + 'px';
-    cv.style.height= r.height + 'px';
+    cv.style.width  = r.width + 'px';
+    cv.style.height = r.height + 'px';
     draw();
   }
-
   window.addEventListener('resize', setCanvasSizeToBox);
 
   function draw(){
-    if(!img){
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0,0,cv.width,cv.height);
-      return;
-    }
-    ctx.save();
     ctx.fillStyle = '#fff';
     ctx.fillRect(0,0,cv.width,cv.height);
-
-    const cx = cv.width/2, cy=cv.height/2;
-    ctx.translate(cx, cy);
+    if(!img) return;
+    ctx.save();
+    ctx.translate(cv.width/2, cv.height/2);
     ctx.rotate(rot);
-
     const base = scale;
-    const drawW = imgW * base;
-    const drawH = imgH * base;
-
     ctx.translate(panX*base, panY*base);
-    ctx.drawImage(img, -drawW/2, -drawH/2, drawW, drawH);
+    ctx.drawImage(img, -imgW*base/2, -imgH*base/2, imgW*base, imgH*base);
     ctx.restore();
   }
 
   function fit(){
     if(!img) return;
-    const sx = cv.width / imgW;
-    const sy = cv.height/ imgH;
-    scale = Math.max(sx, sy);
-    panX = 0; panY = 0;
-    rot = 0;
-    zoomEl.value = 1;
-    rotEl.value = 0;
+    scale = Math.max(cv.width/imgW, cv.height/imgH);
+    panX = panY = rot = 0;
+    zoomEl.value = 1; rotEl.value = 0;
+    window.__cnZoomLast = 1;
     draw();
   }
 
-  function reset(){ fit(); }
-
   function exportImage(){
     const dpi = Number(dpiEl.value || 300);
-    const outW = Math.round((MM_W/25.4) * dpi);
-    const outH = Math.round((MM_H/25.4) * dpi);
-
+    const outW = Math.round((MM_W/25.4)*dpi);
+    const outH = Math.round((MM_H/25.4)*dpi);
     const out = document.createElement('canvas');
-    out.width = outW;
-    out.height= outH;
+    out.width = outW; out.height = outH;
     const octx = out.getContext('2d', { alpha: false });
-
     octx.fillStyle = '#fff';
     octx.fillRect(0,0,outW,outH);
-
     octx.save();
-    const cx = outW/2, cy = outH/2;
-    octx.translate(cx, cy);
+    octx.translate(outW/2, outH/2);
     octx.rotate(rot);
-
-    const sx = outW / cv.width;
-    const sy = outH / cv.height;
-    const base = scale * Math.min(sx, sy);
-    const drawW = imgW * base;
-    const drawH = imgH * base;
-
+    const base = scale * Math.min(outW/cv.width, outH/cv.height);
     octx.translate(panX*base, panY*base);
-    octx.drawImage(img, -drawW/2, -drawH/2, drawW, drawH);
+    octx.drawImage(img, -imgW*base/2, -imgH*base/2, imgW*base, imgH*base);
     octx.restore();
-
     const mime = fmtEl.value || 'image/jpeg';
-    const quality = (mime === 'image/jpeg') ? 0.92 : undefined;
-
-    out.toBlob((blob) => {
+    const quality = mime === 'image/jpeg' ? 0.92 : undefined;
+    out.toBlob(blob => {
       if(!blob) return;
       if(_exportUrl) URL.revokeObjectURL(_exportUrl);
       _exportUrl = URL.createObjectURL(blob);
       outImg.src = _exportUrl;
       pxSize.textContent = `${outW} × ${outH} px`;
       fileSize.textContent = `${(blob.size/1024).toFixed(1)} KB`;
-
-      const ext = (mime === 'image/png') ? 'png' : 'jpg';
+      const ext = mime === 'image/png' ? 'png' : 'jpg';
       dl.href = _exportUrl;
       dl.download = `passport_${MM_W}x${MM_H}_${dpi}dpi.${ext}`;
       dl.style.display = 'inline-block';
-      dl.textContent = '下载导出文件';
-
+      dl.textContent = 'Download';
       btnShare.disabled = false;
       btnShare.onclick = async () => {
-        try{
+        try {
           const file = new File([blob], dl.download, { type: mime });
           if(navigator.canShare && navigator.canShare({ files: [file] })){
             await navigator.share({ files: [file], title: '护照照片', text: '33×48mm' });
-          }else{
-            alert('此浏览器不支持直接分享，请点击"下载导出文件"。');
-          }
-        }catch(e){
-          alert('分享失败，可改用"下载导出文件"。');
-        }
+          } else { alert('Share not supported — please use Download.'); }
+        } catch(e) { alert('Share failed — please use Download.'); }
       };
     }, mime, quality);
   }
 
-  function getPoint(e){
-    const r = cv.getBoundingClientRect();
-    return { x: (e.clientX - r.left) * (cv.width / r.width),
-             y: (e.clientY - r.top ) * (cv.height/ r.height) };
-  }
-
-  function getPinchDist(){
-    const [a, b] = [...pointers.values()];
-    return Math.hypot(a.x - b.x, a.y - b.y);
-  }
+  function getPoint(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)*(cv.width/r.width),y:(e.clientY-r.top)*(cv.height/r.height)}; }
+  function getPinchDist(){ const [a,b]=[...pointers.values()]; return Math.hypot(a.x-b.x,a.y-b.y); }
 
   function onPointerDown(e){
     if(!img) return;
     cv.setPointerCapture?.(e.pointerId);
-    const p = getPoint(e);
-    pointers.set(e.pointerId, p);
-    if(pointers.size === 1){
-      lastSinglePoint = p;
-    } else if(pointers.size === 2){
-      lastPinchDist = getPinchDist();
-    }
+    const p=getPoint(e); pointers.set(e.pointerId,p);
+    if(pointers.size===1) lastSinglePoint=p;
+    else if(pointers.size===2) lastPinchDist=getPinchDist();
   }
-
   function onPointerMove(e){
-    if(!img || !pointers.has(e.pointerId)) return;
-    const p = getPoint(e);
-    pointers.set(e.pointerId, p);
-    if(pointers.size === 1){
-      panX += (p.x - lastSinglePoint.x) / scale;
-      panY += (p.y - lastSinglePoint.y) / scale;
-      lastSinglePoint = p;
-      draw();
-    } else if(pointers.size === 2 && lastPinchDist){
-      const dist = getPinchDist();
-      zoomEl.value = Math.min(3, Math.max(0.5, Number(zoomEl.value) * dist / lastPinchDist));
-      applyZoomRot();
-      lastPinchDist = dist;
-    }
+    if(!img||!pointers.has(e.pointerId)) return;
+    const p=getPoint(e); pointers.set(e.pointerId,p);
+    if(pointers.size===1){ panX+=(p.x-lastSinglePoint.x)/scale; panY+=(p.y-lastSinglePoint.y)/scale; lastSinglePoint=p; draw(); }
+    else if(pointers.size===2&&lastPinchDist){ const d=getPinchDist(); zoomEl.value=Math.min(3,Math.max(0.5,Number(zoomEl.value)*d/lastPinchDist)); applyZoomRot(); lastPinchDist=d; }
   }
+  function onPointerUp(e){ pointers.delete(e.pointerId); lastPinchDist=null; if(pointers.size===1) lastSinglePoint=[...pointers.values()][0]; }
 
-  function onPointerUp(e){
-    pointers.delete(e.pointerId);
-    lastPinchDist = null;
-    if(pointers.size === 1) lastSinglePoint = [...pointers.values()][0];
-  }
-
-  cv.addEventListener('wheel', (e) => {
-    if(!img) return;
-    e.preventDefault();
-    const delta = Math.sign(e.deltaY);
-    const factor = delta > 0 ? 0.97 : 1.03;
-    zoomEl.value = Math.min(3, Math.max(0.5, Number(zoomEl.value) * factor));
+  cv.addEventListener('wheel', e => {
+    if(!img) return; e.preventDefault();
+    zoomEl.value=Math.min(3,Math.max(0.5,Number(zoomEl.value)*(e.deltaY>0?0.97:1.03)));
     applyZoomRot();
-  }, { passive: false });
+  }, {passive:false});
 
   function applyZoomRot(){
     if(!img) return;
-    const userZoom = Number(zoomEl.value);
-    const userRot = Number(rotEl.value);
-    const currentUserZoom = (window.__userZoomLast || 1);
-    const fitScale = scale / currentUserZoom;
-    scale = fitScale * userZoom;
-    rot = userRot * Math.PI / 180;
-    window.__userZoomLast = userZoom;
-    draw();
+    const uz=Number(zoomEl.value), ur=Number(rotEl.value);
+    const fitScale=scale/(window.__cnZoomLast||1);
+    scale=fitScale*uz; rot=ur*Math.PI/180;
+    window.__cnZoomLast=uz; draw();
   }
-
   zoomEl.addEventListener('input', applyZoomRot);
   rotEl.addEventListener('input', applyZoomRot);
 
   fileEl.addEventListener('change', () => {
-    const f = fileEl.files && fileEl.files[0];
-    if(!f) return;
-    originalFile = f;
-    btnBgRemove.textContent = '白底处理';
-
+    const f=fileEl.files&&fileEl.files[0]; if(!f) return;
+    originalFile=f; btnBgRemove.textContent='白底处理';
     if(_imgUrl) URL.revokeObjectURL(_imgUrl);
-    if(_bgUrl)  { URL.revokeObjectURL(_bgUrl); _bgUrl = null; }
-    _imgUrl = URL.createObjectURL(f);
-    const im = new Image();
-    im.onload = () => {
-      URL.revokeObjectURL(_imgUrl); _imgUrl = null;
-      img = im;
-      imgW = im.naturalWidth;
-      imgH = im.naturalHeight;
-      setCanvasSizeToBox();
-      fit();
-      enableUI(true);
-      btnShare.disabled = true;
-      outImg.src = '';
-      dl.style.display = 'none';
-      fileSize.textContent = '-';
-      pxSize.textContent = '-';
-    };
-    im.onerror = () => alert('图片读取失败，请换一张。');
-    im.src = _imgUrl;
+    if(_bgUrl) { URL.revokeObjectURL(_bgUrl); _bgUrl=null; }
+    _imgUrl=URL.createObjectURL(f);
+    const im=new Image();
+    im.onload=()=>{ URL.revokeObjectURL(_imgUrl); _imgUrl=null; img=im; imgW=im.naturalWidth; imgH=im.naturalHeight; setCanvasSizeToBox(); fit(); enableUI(true); btnShare.disabled=true; outImg.src=''; dl.style.display='none'; fileSize.textContent=pxSize.textContent='-'; };
+    im.onerror=()=>alert('图片读取失败，请换一张。');
+    im.src=_imgUrl;
   });
 
   btnFit.addEventListener('click', fit);
-  btnReset.addEventListener('click', reset);
+  btnReset.addEventListener('click', fit);
   btnExport.addEventListener('click', exportImage);
-
   cv.addEventListener('pointerdown', onPointerDown);
   cv.addEventListener('pointermove', onPointerMove);
   cv.addEventListener('pointerup', onPointerUp);
   cv.addEventListener('pointercancel', onPointerUp);
 
-  // 白底处理：AI 去背景
   btnBgRemove.addEventListener('click', async () => {
-    if (!originalFile) return;
-    btnBgRemove.disabled = true;
-    btnBgRemove.textContent = '加载模型…';
+    if(!originalFile) return;
+    btnBgRemove.disabled=true; btnBgRemove.textContent='加载模型…';
     try {
-      const { removeBackground } = await import(
-        'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm'
-      );
-      btnBgRemove.textContent = '处理中…';
-      const blob = await removeBackground(originalFile, {
-        publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/',
-      });
+      const { removeBackground } = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
+      btnBgRemove.textContent='处理中…';
+      const blob = await removeBackground(originalFile, { publicPath:'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/' });
       if(_bgUrl) URL.revokeObjectURL(_bgUrl);
-      _bgUrl = URL.createObjectURL(blob);
-      const newImg = new Image();
-      newImg.onload = () => {
-        URL.revokeObjectURL(_bgUrl); _bgUrl = null;
-        img = newImg;
-        imgW = newImg.naturalWidth;
-        imgH = newImg.naturalHeight;
-        draw();
-        btnBgRemove.textContent = '✓ 白底已处理';
-        btnBgRemove.disabled = false;
-      };
-      newImg.src = _bgUrl;
-    } catch(e) {
-      alert('背景去除失败，请重试。');
-      btnBgRemove.textContent = '白底处理';
-      btnBgRemove.disabled = false;
-    }
+      _bgUrl=URL.createObjectURL(blob);
+      const newImg=new Image();
+      newImg.onload=()=>{ URL.revokeObjectURL(_bgUrl); _bgUrl=null; img=newImg; imgW=newImg.naturalWidth; imgH=newImg.naturalHeight; draw(); btnBgRemove.textContent='✓ 白底已处理'; btnBgRemove.disabled=false; };
+      newImg.src=_bgUrl;
+    } catch(e) { alert('背景去除失败，请重试。'); btnBgRemove.textContent='白底处理'; btnBgRemove.disabled=false; }
   });
 
-  // 初始化
+  setCanvasSizeToBox();
+  enableUI(false);
+})();
+
+// ── NZ TAB ────────────────────────────────────────────────────
+(() => {
+  const OUT_W = 1350, OUT_H = 1800; // 3:4, within 900-4500 × 1200-6000
+  const MIN_KB = 250, MAX_KB = 5120;
+
+  const fileEl     = document.getElementById('nz-file');
+  const cv         = document.getElementById('nz-cv');
+  const ctx        = cv.getContext('2d', { alpha: false });
+  const cropbox    = document.getElementById('nz-cropbox');
+  const zoomEl     = document.getElementById('nz-zoom');
+  const rotEl      = document.getElementById('nz-rot');
+  const qualityEl  = document.getElementById('nz-quality');
+  const qualityVal = document.getElementById('nz-quality-val');
+
+  const btnFit      = document.getElementById('nz-fit');
+  const btnReset    = document.getElementById('nz-reset');
+  const btnExport   = document.getElementById('nz-export');
+  const btnBgRemove = document.getElementById('nz-bgRemove');
+
+  const outImg    = document.getElementById('nz-outImg');
+  const pxSize    = document.getElementById('nz-pxSize');
+  const fileSize  = document.getElementById('nz-fileSize');
+  const sizeBadge = document.getElementById('nz-sizeBadge');
+  const dl        = document.getElementById('nz-dl');
+  const btnShare  = document.getElementById('nz-share');
+
+  let img = null, imgW=0, imgH=0, panX=0, panY=0, scale=1, rot=0;
+  let originalFile = null;
+  let _imgUrl = null, _bgUrl = null, _exportUrl = null;
+  const pointers = new Map();
+  let lastPinchDist = null, lastSinglePoint = null;
+
+  qualityEl.addEventListener('input', () => { qualityVal.textContent = qualityEl.value + '%'; });
+
+  function enableUI(on){
+    btnFit.disabled = btnReset.disabled = btnExport.disabled =
+      zoomEl.disabled = rotEl.disabled = btnShare.disabled =
+      btnBgRemove.disabled = !on;
+  }
+
+  function setCanvasSizeToBox(){
+    const r = cropbox.getBoundingClientRect();
+    if(!r.width) return;
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    cv.width  = Math.round(r.width * dpr);
+    cv.height = Math.round(r.height * dpr);
+    cv.style.width  = r.width + 'px';
+    cv.style.height = r.height + 'px';
+    draw();
+  }
+  window.addEventListener('resize', setCanvasSizeToBox);
+
+  function draw(){
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,cv.width,cv.height);
+    if(!img) return;
+    ctx.save();
+    ctx.translate(cv.width/2, cv.height/2);
+    ctx.rotate(rot);
+    const base = scale;
+    ctx.translate(panX*base, panY*base);
+    ctx.drawImage(img, -imgW*base/2, -imgH*base/2, imgW*base, imgH*base);
+    ctx.restore();
+  }
+
+  function fit(){
+    if(!img) return;
+    scale = Math.max(cv.width/imgW, cv.height/imgH);
+    panX = panY = rot = 0;
+    zoomEl.value = 1; rotEl.value = 0;
+    window.__nzZoomLast = 1;
+    draw();
+  }
+
+  function exportImage(){
+    const out = document.createElement('canvas');
+    out.width = OUT_W; out.height = OUT_H;
+    const octx = out.getContext('2d', { alpha: false });
+    octx.fillStyle = '#fff';
+    octx.fillRect(0,0,OUT_W,OUT_H);
+    octx.save();
+    octx.translate(OUT_W/2, OUT_H/2);
+    octx.rotate(rot);
+    const base = scale * Math.min(OUT_W/cv.width, OUT_H/cv.height);
+    octx.translate(panX*base, panY*base);
+    octx.drawImage(img, -imgW*base/2, -imgH*base/2, imgW*base, imgH*base);
+    octx.restore();
+
+    const quality = Number(qualityEl.value) / 100;
+    out.toBlob(blob => {
+      if(!blob) return;
+      if(_exportUrl) URL.revokeObjectURL(_exportUrl);
+      _exportUrl = URL.createObjectURL(blob);
+      outImg.src = _exportUrl;
+      pxSize.textContent = `${OUT_W} × ${OUT_H} px`;
+      const kb = blob.size / 1024;
+      fileSize.textContent = `${kb.toFixed(1)} KB`;
+
+      const valid = kb >= MIN_KB && kb <= MAX_KB;
+      sizeBadge.textContent = valid ? '✓ Valid' : (kb < MIN_KB ? '✗ Too small (< 250 KB)' : '✗ Too large (> 5 MB)');
+      sizeBadge.className = 'size-badge ' + (valid ? 'ok' : 'bad');
+
+      dl.href = _exportUrl;
+      dl.download = `nz_passport_${OUT_W}x${OUT_H}.jpg`;
+      dl.style.display = 'inline-block';
+      dl.textContent = 'Download';
+      btnShare.disabled = false;
+      btnShare.onclick = async () => {
+        try {
+          const file = new File([blob], dl.download, { type: 'image/jpeg' });
+          if(navigator.canShare && navigator.canShare({ files: [file] })){
+            await navigator.share({ files: [file], title: 'NZ Passport Photo', text: `${OUT_W}×${OUT_H}px` });
+          } else { alert('Share not supported — please use Download.'); }
+        } catch(e) { alert('Share failed — please use Download.'); }
+      };
+    }, 'image/jpeg', quality);
+  }
+
+  function getPoint(e){ const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)*(cv.width/r.width),y:(e.clientY-r.top)*(cv.height/r.height)}; }
+  function getPinchDist(){ const [a,b]=[...pointers.values()]; return Math.hypot(a.x-b.x,a.y-b.y); }
+
+  function onPointerDown(e){
+    if(!img) return;
+    cv.setPointerCapture?.(e.pointerId);
+    const p=getPoint(e); pointers.set(e.pointerId,p);
+    if(pointers.size===1) lastSinglePoint=p;
+    else if(pointers.size===2) lastPinchDist=getPinchDist();
+  }
+  function onPointerMove(e){
+    if(!img||!pointers.has(e.pointerId)) return;
+    const p=getPoint(e); pointers.set(e.pointerId,p);
+    if(pointers.size===1){ panX+=(p.x-lastSinglePoint.x)/scale; panY+=(p.y-lastSinglePoint.y)/scale; lastSinglePoint=p; draw(); }
+    else if(pointers.size===2&&lastPinchDist){ const d=getPinchDist(); zoomEl.value=Math.min(3,Math.max(0.5,Number(zoomEl.value)*d/lastPinchDist)); applyZoomRot(); lastPinchDist=d; }
+  }
+  function onPointerUp(e){ pointers.delete(e.pointerId); lastPinchDist=null; if(pointers.size===1) lastSinglePoint=[...pointers.values()][0]; }
+
+  cv.addEventListener('wheel', e => {
+    if(!img) return; e.preventDefault();
+    zoomEl.value=Math.min(3,Math.max(0.5,Number(zoomEl.value)*(e.deltaY>0?0.97:1.03)));
+    applyZoomRot();
+  }, {passive:false});
+
+  function applyZoomRot(){
+    if(!img) return;
+    const uz=Number(zoomEl.value), ur=Number(rotEl.value);
+    const fitScale=scale/(window.__nzZoomLast||1);
+    scale=fitScale*uz; rot=ur*Math.PI/180;
+    window.__nzZoomLast=uz; draw();
+  }
+  zoomEl.addEventListener('input', applyZoomRot);
+  rotEl.addEventListener('input', applyZoomRot);
+
+  fileEl.addEventListener('change', () => {
+    const f=fileEl.files&&fileEl.files[0]; if(!f) return;
+    originalFile=f; btnBgRemove.textContent='White Background';
+    if(_imgUrl) URL.revokeObjectURL(_imgUrl);
+    if(_bgUrl) { URL.revokeObjectURL(_bgUrl); _bgUrl=null; }
+    _imgUrl=URL.createObjectURL(f);
+    const im=new Image();
+    im.onload=()=>{ URL.revokeObjectURL(_imgUrl); _imgUrl=null; img=im; imgW=im.naturalWidth; imgH=im.naturalHeight; setCanvasSizeToBox(); fit(); enableUI(true); btnShare.disabled=true; outImg.src=''; dl.style.display='none'; fileSize.textContent=pxSize.textContent='-'; sizeBadge.textContent='-'; sizeBadge.className='size-badge'; };
+    im.onerror=()=>alert('Could not read image — please try another file.');
+    im.src=_imgUrl;
+  });
+
+  btnFit.addEventListener('click', fit);
+  btnReset.addEventListener('click', fit);
+  btnExport.addEventListener('click', exportImage);
+  cv.addEventListener('pointerdown', onPointerDown);
+  cv.addEventListener('pointermove', onPointerMove);
+  cv.addEventListener('pointerup', onPointerUp);
+  cv.addEventListener('pointercancel', onPointerUp);
+
+  btnBgRemove.addEventListener('click', async () => {
+    if(!originalFile) return;
+    btnBgRemove.disabled=true; btnBgRemove.textContent='Loading model…';
+    try {
+      const { removeBackground } = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
+      btnBgRemove.textContent='Processing…';
+      const blob = await removeBackground(originalFile, { publicPath:'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/' });
+      if(_bgUrl) URL.revokeObjectURL(_bgUrl);
+      _bgUrl=URL.createObjectURL(blob);
+      const newImg=new Image();
+      newImg.onload=()=>{ URL.revokeObjectURL(_bgUrl); _bgUrl=null; img=newImg; imgW=newImg.naturalWidth; imgH=newImg.naturalHeight; draw(); btnBgRemove.textContent='✓ White BG applied'; btnBgRemove.disabled=false; };
+      newImg.src=_bgUrl;
+    } catch(e) { alert('Background removal failed — please try again.'); btnBgRemove.textContent='White Background'; btnBgRemove.disabled=false; }
+  });
+
   setCanvasSizeToBox();
   enableUI(false);
 })();
